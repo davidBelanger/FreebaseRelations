@@ -12,6 +12,8 @@ import scala.util.{Failure, Success}
 import play.api.libs.json._
 import collection.mutable.ArrayBuffer
 import concurrent.stm.Source
+import java.io.{FileOutputStream, OutputStreamWriter, PrintWriter}
+import java.util.zip.GZIPOutputStream
 
 
 object FreebaseQuery {
@@ -82,6 +84,7 @@ object FreebaseQuery {
 
     val allExtractedRelations = new ArrayBuffer[FreebaseRelation]()
     object aERMutex
+    val outputStream = new PrintWriter("outputRelations.txt")
 
     val futures =
       for(mid <- io.Source.fromFile("mids").getLines().take(500)) yield {
@@ -125,7 +128,9 @@ object FreebaseQuery {
 
                 }
                 aERMutex.synchronized{
+
                   allExtractedRelations ++= extractedRelations
+                  outputStream.println(extractedRelations.mkString("\n"))
                 }
 
                 val tr = extractedRelations.mkString("\n")
