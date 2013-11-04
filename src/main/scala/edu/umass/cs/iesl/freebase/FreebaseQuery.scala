@@ -14,6 +14,7 @@ import collection.mutable.ArrayBuffer
 import concurrent.stm.Source
 import java.io.{FileOutputStream, OutputStreamWriter, PrintWriter}
 import java.util.zip.GZIPOutputStream
+import collection.immutable.HashMap
 
 
 object FreebaseQuery {
@@ -87,7 +88,7 @@ object FreebaseQuery {
     val outputStream = new PrintWriter("outputRelations.txt")
 
     val futures =
-      for(mid <- io.Source.fromFile("mids").getLines().take(500)) yield {
+      for(mid <- io.Source.fromFile("mids").getLines()) yield {
         Future[String] {
           try {
 
@@ -130,10 +131,12 @@ object FreebaseQuery {
                 aERMutex.synchronized{
 
                   allExtractedRelations ++= extractedRelations
-                  outputStream.println(extractedRelations.mkString("\n"))
+
+                  outputStream.println(extractedRelations.map(_.tabDeliminatedString).mkString("\n"))
+                  outputStream.flush()
                 }
 
-                val tr = extractedRelations.mkString("\n")
+                val tr = extractedRelations.map(_.tabDeliminatedString).mkString("\n")
                 tr
 
               }else{
@@ -159,7 +162,7 @@ object FreebaseQuery {
       case Success(results) => println("Extacted:\n" + allExtractedRelations.mkString("\n") )
     }
 
-    Await.result(waitingList,100 seconds)
+    Await.result(waitingList,10000 seconds)
   }
 
   def executeQuery(query:String,useGet: Boolean): JsValue = {
@@ -183,7 +186,6 @@ object FreebaseQuery {
       }
     }
     return None
-
   }
 
   def makeRequest(query: String,useGetRequest: Boolean) = {
@@ -220,8 +222,30 @@ object FreebaseEntity{
 }
 
 
-case class FreebaseRelation(e1: FreebaseEntity, e2: FreebaseEntity,rel: String)
+case class FreebaseRelation(e1: FreebaseEntity, e2: FreebaseEntity,rel: String)  {
+  def tabDeliminatedString: String = Seq(e1.mid,e1.name,e2.mid,e2.name,rel).mkString("\t")
+}
 
 case class FreebaseEntity(name: String, mid: String)   {
   override def toString = name + "-" + mid
 }
+
+
+//object RelationAlignment{
+//  def main( args: Array[String]) {
+//    val relations = collection.mutable.HashMap[String,HashMap[String,FreebaseRelation]]()
+//    val entitiesSeenInText = ArrayBuffer[String]()
+//    for(line <- io.Source.fromFile("outputRelations.txt").getLines()){
+//      val fields = line.split("\t")
+//        val e1Id = fields(0)
+//        val e2Id = fields(2)
+//        val e1 =  FreebaseEntity(fields(1),fields(0),fields(3),fields(2),fields(4))
+//        val relation = FreebaseRelation(e1,e2)
+//        relations.getOrElseUpdate(e1Id,HashMap[String,FreebaseRelation]) += e2Id -> relation
+//        relations.getOrElseUpdate(e2Id,HashMap[String,FreebaseRelation]) += e1Id -> relation
+//        entitiesSeenInText += e1Id
+//    }
+//    println("things that were both in the corpus")
+//  }
+//
+//}
