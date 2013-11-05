@@ -50,7 +50,7 @@ object FreebaseQuery {
     ("/people/person/places_lived","/people/place_lived/location","place_lived") ,
     ("/people/person/sibling_s","/people/sibling_relationship/sibling","sibling"),
     ("/people/person/spouse_s","/people/marriage/spouse","spouse"),
-    ("/people/person/education","/education/education/institution","educaton_institution"),
+    ("/people/person/education","/education/education/institution","education_institution"),
     ("/people/person/employment_history","/business/employment_tenure/company","employer")
   )
 
@@ -103,12 +103,13 @@ object FreebaseQuery {
                   }
                 }
                 val response = executeQuery(query,false)
-                val name = (response \ "name").toString()
+                val name = (response \ "name").toString().replaceAll("\"","")
                 val mid2 = (response \ "mid").toString().replaceAll("\"","")
                 assert(mid2 == mid,"mid2 = " + mid2 + " mid1 = " + mid)
 
                 val thisEntity = FreebaseEntity(name,mid)
                 val extractedRelations = ArrayBuffer[FreebaseRelation]()
+
 
                 var strs =  new ArrayBuffer[String]()  +=  name + "\t"
                 for (key <- oneDeepKeys){
@@ -168,8 +169,7 @@ object FreebaseQuery {
   def executeQuery(query:String,useGet: Boolean): JsValue = {
     val request = makeRequest(query,useGet)
     val httpResponse = request.execute()
-
-    val response = (Json.parse(httpResponse.parseAsString()) \ "result").apply(0)   //todo: should we be doing this apply(0)?
+    val response = (Json.parse(httpResponse.parseAsString()) \ "result").apply(0)  //note: this apply(0) makes sense, since we specified "limit":1 for the top-level query. this is fine, since we're querying by mid
     response
   }
 
@@ -180,8 +180,6 @@ object FreebaseQuery {
     val typ = (response \ "type").as[Seq[String]]
     for(entityType  <- entityTypes){
       if (typ.contains(entityType)){
-        val name = (response \ "name").toString
-        //println(name + " has type " + entityType)
         return Some(entityType)
       }
     }
