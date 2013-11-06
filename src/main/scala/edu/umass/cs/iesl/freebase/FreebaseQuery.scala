@@ -10,6 +10,7 @@ import scala.util.{Failure, Success}
 import play.api.libs.json._
 import collection.mutable.ArrayBuffer
 import java.io.{PrintWriter}
+import redis.clients.jedis.Jedis
 
 
 object FreebaseQuery {
@@ -80,7 +81,7 @@ object FreebaseQuery {
     val outputStream = new PrintWriter("outputRelations.txt")
 
     val futures =
-      for(mid <- io.Source.fromFile("mids").getLines()) yield {
+      for(mid <- io.Source.fromFile("mids").getLines().take(200)) yield {
         future {
           try {
 
@@ -94,7 +95,7 @@ object FreebaseQuery {
                     case "/organization/organization" => (makeQueryString(mid,organizationKeys,twoDeepOrganizationKeys) ,organizationKeys,twoDeepOrganizationKeys)
                   }
                 }
-                val response = blocking { QueryExecutor.executeQuery(query,false) }
+                val response = blocking { QueryExecutor.executeQuery(mid + "-data",query,false) }
                 val name = (response \ "name").toString().replaceAll("\"","")
                 val mid2 = (response \ "mid").toString().replaceAll("\"","")
                 assert(mid2 == mid,"mid2 = " + mid2 + " mid1 = " + mid)
@@ -162,7 +163,7 @@ object FreebaseQuery {
 
   def getEntityType(mid: String): Option[String] = {
     val typeQuery = getTypeQuery(mid)
-    val response = QueryExecutor.executeQuery(typeQuery,true)
+    val response = QueryExecutor.executeQuery(mid + "-type",typeQuery,true)
 
     val typ = (response \ "type").as[Seq[String]]
     for(entityType  <- entityTypes){
@@ -196,25 +197,35 @@ object QueryExecutor{
   //val base = "http://dime.labs.freebase.com/api/service/mqlread"
   val apiKey = io.Source.fromFile("GOOGLE_API.key").getLines().next()
   var mostRecentCall = System.currentTimeMillis
+  val jedis = new Jedis("localhost",6379,600000)
+  //jedis.pipelined()
 
 
-  def executeQuery(query:String,useGet: Boolean): JsValue = {
-    val request = makeRequest(query,useGet)
-    val httpResponse =
+  def executeQuery(mid: String,query:String,useGet: Boolean): JsValue = {
+    val responseString =
+
     mutex.synchronized{
+    if( jedis.exists(mid)){
+      jedis.get(mid)
+    }else{
+      val request = makeRequest(query,useGet)
+      //mutex.synchronized{
 
-      val currentTime =  System.currentTimeMillis
-      val timeToWait = math.max(0,mostRecentCall - currentTime + timeBetweenQueries)
-      mostRecentCall = currentTime
+        val currentTime =  System.currentTimeMillis
+        val timeToWait = math.max(0,mostRecentCall - currentTime + timeBetweenQueries)
+        mostRecentCall = currentTime
 
-      println("waiting " + timeToWait.toLong)
-      Thread.sleep(timeToWait.toLong)
-      request.execute()
+        //println("waiting " + timeToWait.toLong)
+        //Thread.sleep(timeToWait.toLong)
+        val httpResponse = request.execute()
+        val responseStr = httpResponse.parseAsString()
+        jedis.set(mid,responseStr)
+        responseStr
+      //}
+    }
     }
 
-
-//    val httpResponse =  mutex.synchronized{ request.execute() }
-    val response = (Json.parse(httpResponse.parseAsString()) \ "result").apply(0)  //note: this apply(0) makes sense, since we specified "limit":1 for the top-level query. this is fine, since we're querying by mid
+    val response = (Json.parse(responseString) \ "result").apply(0)  //note: this apply(0) makes sense, since we specified "limit":1 for the top-level query. this is fine, since we're querying by mid
     response
   }
   def makeRequest(query: String,useGetRequest: Boolean) = {
