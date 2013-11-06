@@ -1,20 +1,15 @@
 package edu.umass.cs.iesl.freebase
 
-import concurrent.Future
 import com.google.api.client.http.javanet.NetHttpTransport
 import com.google.api.client.http.{HttpResponseException, HttpHeaders, ByteArrayContent, GenericUrl}
 import java.lang.Exception
-import util.{Failure, Success}
-import concurrent.{ExecutionContext, Future, Await}
+import concurrent.{ExecutionContext}
 import scala.concurrent.duration._
 import ExecutionContext.Implicits.global
 import scala.util.{Failure, Success}
 import play.api.libs.json._
 import collection.mutable.ArrayBuffer
-import concurrent.stm.Source
-import java.io.{FileOutputStream, OutputStreamWriter, PrintWriter}
-import java.util.zip.GZIPOutputStream
-import collection.immutable.HashMap
+import java.io.{PrintWriter}
 
 
 object FreebaseQuery {
@@ -193,7 +188,7 @@ object FreebaseEntity{
 
 object QueryExecutor{
 
-  val timeBetweenQueries = 10 //.1 seconds
+  val timeBetweenQueries = 1 //.1 seconds
   object mutex
   val httpTransport  = new NetHttpTransport();
   val requestFactory = httpTransport.createRequestFactory();
@@ -209,11 +204,11 @@ object QueryExecutor{
     mutex.synchronized{
 
       val currentTime =  System.currentTimeMillis
+      val timeToWait = math.max(0,mostRecentCall - currentTime + timeBetweenQueries)
       mostRecentCall = currentTime
 
-      val timeToWait = math.max(0,currentTime - mostRecentCall + timeBetweenQueries)
-      println("waiting " + timeToWait)
-      Thread.sleep(timeToWait)
+      println("waiting " + timeToWait.toLong)
+      Thread.sleep(timeToWait.toLong)
       request.execute()
     }
 
