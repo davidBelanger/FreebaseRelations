@@ -200,7 +200,7 @@ object QueryExecutor{
   val base = "https://www.googleapis.com/freebase/v1/mqlread"
   //val base = "http://dime.labs.freebase.com/api/service/mqlread"
   val apiKey = io.Source.fromFile("GOOGLE_API.key").getLines().next()
-  val mostRecentCall = System.currentTimeMillis
+  var mostRecentCall = System.currentTimeMillis
 
 
   def executeQuery(query:String,useGet: Boolean): JsValue = {
@@ -209,11 +209,16 @@ object QueryExecutor{
     mutex.synchronized{
 
       val currentTime =  System.currentTimeMillis
+      mostRecentCall = currentTime
+
       val timeToWait = math.max(0,currentTime - mostRecentCall + timeBetweenQueries)
+      println("waiting " + timeToWait)
       Thread.sleep(timeToWait)
       request.execute()
     }
 
+
+//    val httpResponse =  mutex.synchronized{ request.execute() }
     val response = (Json.parse(httpResponse.parseAsString()) \ "result").apply(0)  //note: this apply(0) makes sense, since we specified "limit":1 for the top-level query. this is fine, since we're querying by mid
     response
   }
