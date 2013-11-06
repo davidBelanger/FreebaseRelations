@@ -18,11 +18,7 @@ import collection.immutable.HashMap
 
 
 object FreebaseQuery {
-  val httpTransport  = new NetHttpTransport();
-  val requestFactory = httpTransport.createRequestFactory();
-  val base = "https://www.googleapis.com/freebase/v1/mqlread"
-  //val base = "http://dime.labs.freebase.com/api/service/mqlread"
-  val apiKey = io.Source.fromFile("GOOGLE_API.key").getLines().next()
+
   val baseQueryString = "[{ \"name\": null, \"id\": null, \"mid\": null, \"optional\": true }]"
 
 
@@ -81,6 +77,7 @@ object FreebaseQuery {
 
   def main( args: Array[String]) {
 
+    import scala.concurrent._
     val useGet = false
 
     val allExtractedRelations = new ArrayBuffer[FreebaseRelation]()
@@ -89,7 +86,7 @@ object FreebaseQuery {
 
     val futures =
       for(mid <- io.Source.fromFile("mids").getLines()) yield {
-        Future[String] {
+        future {
           try {
 
             val typ = getEntityType(mid)
@@ -102,7 +99,7 @@ object FreebaseQuery {
                     case "/organization/organization" => (makeQueryString(mid,organizationKeys,twoDeepOrganizationKeys) ,organizationKeys,twoDeepOrganizationKeys)
                   }
                 }
-                val response = executeQuery(query,false)
+                val response = blocking { QueryExecutor.executeQuery(query,false) }
                 val name = (response \ "name").toString().replaceAll("\"","")
                 val mid2 = (response \ "mid").toString().replaceAll("\"","")
                 assert(mid2 == mid,"mid2 = " + mid2 + " mid1 = " + mid)
@@ -131,7 +128,7 @@ object FreebaseQuery {
                 }
                 aERMutex.synchronized{
 
-                  allExtractedRelations ++= extractedRelations
+                  //allExtractedRelations ++= extractedRelations
 
                   outputStream.println(extractedRelations.map(_.tabDeliminatedString).mkString("\n"))
                   outputStream.flush()
@@ -166,16 +163,11 @@ object FreebaseQuery {
     Await.result(waitingList,10000 seconds)
   }
 
-  def executeQuery(query:String,useGet: Boolean): JsValue = {
-    val request = makeRequest(query,useGet)
-    val httpResponse = request.execute()
-    val response = (Json.parse(httpResponse.parseAsString()) \ "result").apply(0)  //note: this apply(0) makes sense, since we specified "limit":1 for the top-level query. this is fine, since we're querying by mid
-    response
-  }
+
 
   def getEntityType(mid: String): Option[String] = {
     val typeQuery = getTypeQuery(mid)
-    val response = executeQuery(typeQuery,true)
+    val response = QueryExecutor.executeQuery(typeQuery,true)
 
     val typ = (response \ "type").as[Seq[String]]
     for(entityType  <- entityTypes){
@@ -186,6 +178,45 @@ object FreebaseQuery {
     return None
   }
 
+
+}
+
+object FreebaseEntity{
+  def apply(r: JsValue): FreebaseEntity = {
+    if((r \\ "name").headOption.isEmpty ) println("error = " + r.toString())
+    val name = (r \\ "name").head.toString().replaceAll("\"","")
+    val mid =  (r \\ "mid").head.toString().replaceAll("\"","")
+    FreebaseEntity(name,mid)
+  }
+
+}
+
+object QueryExecutor{
+
+  val timeBetweenQueries = 10 //.1 seconds
+  object mutex
+  val httpTransport  = new NetHttpTransport();
+  val requestFactory = httpTransport.createRequestFactory();
+  val base = "https://www.googleapis.com/freebase/v1/mqlread"
+  //val base = "http://dime.labs.freebase.com/api/service/mqlread"
+  val apiKey = io.Source.fromFile("GOOGLE_API.key").getLines().next()
+  val mostRecentCall = System.currentTimeMillis
+
+
+  def executeQuery(query:String,useGet: Boolean): JsValue = {
+    val request = makeRequest(query,useGet)
+    val httpResponse =
+    mutex.synchronized{
+
+      val currentTime =  System.currentTimeMillis
+      val timeToWait = math.max(0,currentTime - mostRecentCall + timeBetweenQueries)
+      Thread.sleep(timeToWait)
+      request.execute()
+    }
+
+    val response = (Json.parse(httpResponse.parseAsString()) \ "result").apply(0)  //note: this apply(0) makes sense, since we specified "limit":1 for the top-level query. this is fine, since we're querying by mid
+    response
+  }
   def makeRequest(query: String,useGetRequest: Boolean) = {
     val request = if (useGetRequest){
       val url = new GenericUrl(base);
@@ -207,18 +238,9 @@ object FreebaseQuery {
     }
     request
   }
-}
 
-object FreebaseEntity{
-  def apply(r: JsValue): FreebaseEntity = {
-    if((r \\ "name").headOption.isEmpty ) println("error = " + r.toString())
-    val name = (r \\ "name").head.toString().replaceAll("\"","")
-    val mid =  (r \\ "mid").head.toString().replaceAll("\"","")
-    FreebaseEntity(name,mid)
-  }
 
 }
-
 
 case class FreebaseRelation(e1: FreebaseEntity, e2: FreebaseEntity,rel: String)  {
   def tabDeliminatedString: String = Seq(e1.mid,e1.name,e2.mid,e2.name,rel).mkString("\t")
