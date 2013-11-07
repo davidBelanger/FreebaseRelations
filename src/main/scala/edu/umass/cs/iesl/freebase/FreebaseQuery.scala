@@ -107,7 +107,7 @@ object FreebaseQuery {
                 var strs =  new ArrayBuffer[String]()  +=  name + "\t"
                 for (key <- oneDeepKeys){
                   val resp =  (response \ key._1 ).as[List[JsValue]]
-                  val ents = resp.map(r => FreebaseEntity(r))
+                  val ents = resp.flatMap(r => FreebaseEntity(r))
                   extractedRelations ++= ents.map(e => FreebaseRelation(thisEntity,e,key._2))
                   if(!resp.isEmpty) strs += "\t" + key + "\t" + ents.map(_.toString).mkString(",") + "\t"
 
@@ -115,7 +115,7 @@ object FreebaseQuery {
                 for(key <- twoDeepKeys){
                   val resp =  (response \ key._1 \\ key._2)
                   if(!resp.isEmpty){
-                    val ents = resp.map(r => FreebaseEntity(r))
+                    val ents = resp.flatMap(r => FreebaseEntity(r))
                     extractedRelations ++= ents.map(e => FreebaseRelation(thisEntity,e,key._3))
                     strs += "\t" + key + "\t" + ents.map(_.toString).mkString(",") + "\t"
 
@@ -178,11 +178,15 @@ object FreebaseQuery {
 }
 
 object FreebaseEntity{
-  def apply(r: JsValue): FreebaseEntity = {
-    if((r \\ "name").headOption.isEmpty ) println("error = " + r.toString())
-    val name = (r \\ "name").head.toString().replaceAll("\"","")
-    val mid =  (r \\ "mid").head.toString().replaceAll("\"","")
-    FreebaseEntity(name,mid)
+  def apply(r: JsValue): Option[FreebaseEntity] = {
+    if(! (r \\ "name").headOption.isEmpty ){
+      val name = (r \\ "name").head.toString().replaceAll("\"","")
+      val mid =  (r \\ "mid").head.toString().replaceAll("\"","")
+      Some(FreebaseEntity(name,mid) )
+    } else{
+      None
+    }
+
   }
 
 }
