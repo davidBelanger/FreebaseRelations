@@ -81,7 +81,7 @@ object FreebaseQuery {
     val outputStream = new PrintWriter("outputRelations.txt")
 
     val futures =
-      for(mid <- io.Source.fromFile("mids").getLines().take(200)) yield {
+      for(mid <- io.Source.fromFile("mids").getLines().take(2000)) yield {
         future {
           try {
 
@@ -138,7 +138,7 @@ object FreebaseQuery {
               }
           } catch {
             case ex: HttpResponseException => ex.getContent
-            case   ex: Exception  => ex.getStackTrace.mkString(",");
+            case   ex: Exception  =>  ex.getMessage +   ex.getStackTrace.mkString(",")
 
           }
         }
@@ -197,19 +197,18 @@ object QueryExecutor{
   //val base = "http://dime.labs.freebase.com/api/service/mqlread"
   val apiKey = io.Source.fromFile("GOOGLE_API.key").getLines().next()
   var mostRecentCall = System.currentTimeMillis
-  val jedis = new Jedis("localhost",6379,600000)
-  //jedis.pipelined()
+  def getJedis(): Jedis = new Jedis("localhost",6379,600000)
 
 
   def executeQuery(mid: String,query:String,useGet: Boolean): JsValue = {
-    val responseString =
+    val jedis = getJedis()
 
-    mutex.synchronized{
+    val responseString =
     if( jedis.exists(mid)){
       jedis.get(mid)
     }else{
       val request = makeRequest(query,useGet)
-      //mutex.synchronized{
+      mutex.synchronized{
 
         val currentTime =  System.currentTimeMillis
         val timeToWait = math.max(0,mostRecentCall - currentTime + timeBetweenQueries)
@@ -221,8 +220,7 @@ object QueryExecutor{
         val responseStr = httpResponse.parseAsString()
         jedis.set(mid,responseStr)
         responseStr
-      //}
-    }
+      }
     }
 
     val response = (Json.parse(responseString) \ "result").apply(0)  //note: this apply(0) makes sense, since we specified "limit":1 for the top-level query. this is fine, since we're querying by mid
@@ -280,3 +278,5 @@ case class FreebaseEntity(name: String, mid: String)   {
 //  }
 //
 //}
+
+
