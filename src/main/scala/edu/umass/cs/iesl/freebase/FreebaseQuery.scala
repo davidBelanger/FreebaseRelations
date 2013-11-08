@@ -220,10 +220,8 @@ object QueryExecutor{
 
        // println("waiting " + timeToWait.toLong)
         Thread.sleep(timeToWait.toLong)
-        FreebaseQuery.numRequestsOut += 1
         val httpResponse = request.execute()
-        FreebaseQuery.numRequestsOut -= 1
-        println("num Requests out = " + FreebaseQuery.numRequestsOut)
+
         val responseStr = httpResponse.parseAsString()
         jedis.set(mid,responseStr)
         responseStr
