@@ -81,7 +81,7 @@ object FreebaseQuery {
     val outputStream = new PrintWriter("outputRelations.txt")
 
     val futures =
-      for(mid <- io.Source.fromFile("mids").getLines().take(3000)) yield {
+      for(mid <- io.Source.fromFile("mids").getLines()) yield {
         future {
           try {
 
