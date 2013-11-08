@@ -70,7 +70,7 @@ object FreebaseQuery {
     "[{ \"limit\":1, \"name\": null, \"type\": [], \"mid\": \"" + mid +"\"}]"
   }
 
-
+  var numRequestsOut = 0
   def main( args: Array[String]) {
 
     import scala.concurrent._
@@ -218,9 +218,12 @@ object QueryExecutor{
         val timeToWait = math.max(0,mostRecentCall - currentTime + timeBetweenQueries)
         mostRecentCall = currentTime
 
-        println("waiting " + timeToWait.toLong)
+       // println("waiting " + timeToWait.toLong)
         Thread.sleep(timeToWait.toLong)
+        FreebaseQuery.numRequestsOut += 1
         val httpResponse = request.execute()
+        FreebaseQuery.numRequestsOut -= 1
+        println("num Requests out = " + FreebaseQuery.numRequestsOut)
         val responseStr = httpResponse.parseAsString()
         jedis.set(mid,responseStr)
         responseStr
