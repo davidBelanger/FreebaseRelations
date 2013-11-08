@@ -218,8 +218,8 @@ object QueryExecutor{
         val timeToWait = math.max(0,mostRecentCall - currentTime + timeBetweenQueries)
         mostRecentCall = currentTime
 
-        //println("waiting " + timeToWait.toLong)
-        //Thread.sleep(timeToWait.toLong)
+        println("waiting " + timeToWait.toLong)
+        Thread.sleep(timeToWait.toLong)
         val httpResponse = request.execute()
         val responseStr = httpResponse.parseAsString()
         jedis.set(mid,responseStr)
