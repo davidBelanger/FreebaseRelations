@@ -13,9 +13,22 @@ import java.io.{PrintWriter}
 import redis.clients.jedis.Jedis
 
 class FreeBasePath(path: Seq[String], name: String) {
-  def toJSonStr() {
-    ???
+  // TODO(aschein) Put this in a companion object.
+  val baseQueryString = "[{ \"name\": null, \"id\": null, \"mid\": null, \"optional\": true }]"
+  val jsonString = toJSonStr("", 0)
+
+  def toJsonStr(): String = {
+    toJSonStrRecurse(0)
   }
+  private def toJSonStrRecurse(curr_idx: Int) {
+    val curr_elem = path(curr_idx)
+    if(path.length == curr_idx + 1) {
+      return "\"" + curr_elem + "\":" + baseQueryString
+    } else {
+      return "\"" + curr_elem + "\": " + "[{\"optional\": true, " + toJSonStr(curr_idx + 1) + "}]"
+    }
+  }
+
   def fromJSonStr() {
     ???
   }
@@ -66,7 +79,6 @@ object FreebaseQuery {
     val deepInnerFields = twoDeepKeys.map(outer_inner => {
       "\"" + outer_inner._1 + "\": " + "[{\"optional\": true, " + baseQuery(outer_inner._2) + "}]"
     })
-
 
     val query = "[{ \"limit\":1, \"name\": null, \"type\": [], \"mid\": \"" + mid + "\", " + (innerFields ++ deepInnerFields).mkString(",") + "}]"
 
@@ -223,7 +235,7 @@ class QueryExecutor(jedisHost: String,jedisPort: Int,readFromJedis: Boolean, wri
   //val base = "http://dime.labs.freebase.com/api/service/mqlread"
   val apiKey = io.Source.fromFile("GOOGLE_API.key").getLines().next()
   var mostRecentCall = System.currentTimeMillis
-  def getJedis(): Jedis = new Jedis(jedisHost,jedisPort,600000)
+    def getJedis(): Jedis = new Jedis(jedisHost,jedisPort,600000)
 
 
   def executeQuery(mid: String,query:String,useGet: Boolean): JsValue = {
