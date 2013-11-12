@@ -12,7 +12,7 @@ import collection.mutable.ArrayBuffer
 import java.io.{PrintWriter}
 import redis.clients.jedis.Jedis
 
-class FreeBasePath() {
+class FreeBasePath(path: Seq[String], name: String) {
   def toJSonStr() {
     ???
   }
