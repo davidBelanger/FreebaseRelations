@@ -13,11 +13,30 @@ import java.io.{PrintWriter}
 import redis.clients.jedis.Jedis
 
 class FreeBasePath(path: Seq[String], name: String) {
+
   def toJSonStr() {
     ???
   }
-  def fromJSonStr() {
-    ???
+  def fromJsValue(response: JsValue, entity: FreebaseEntity) : Seq[FreebaseRelation] = {
+    val extractedRelations = ArrayBuffer[FreebaseRelation]()
+
+    var jsv = response
+    val len = path.length
+    val resp =
+    if(path.length == 1){
+      jsv \\ path.last
+    }else{
+      for(key_index <- 0 until len - 1){
+        jsv = jsv \ path(key_index)
+      }
+      jsv \\ path.last
+    }
+
+    if(!resp.isEmpty){
+      val ents = resp.flatMap(r => FreebaseEntity(r))
+      extractedRelations ++= ents.map(e => FreebaseRelation(entity,e,name))
+    }
+    extractedRelations
   }
 }
 
@@ -52,8 +71,6 @@ object FreebaseQuery {
     ("/people/person/education","/education/education/institution","education_institution"),
     ("/people/person/employment_history","/business/employment_tenure/company","employer")
   )
-
-  // TODO(aschein): Class for arbitrary length freebase path.
 
 
   def baseQuery(key: String): String = {
@@ -99,9 +116,14 @@ object FreebaseQuery {
 
     val QueryExecutor = new QueryExecutor(opts.redisHost.value,opts.redisSocket.value.toInt,opts.readFromRedis.value.toBoolean,opts.writeToRedis.value.toBoolean)
 
-    val allExtractedRelations = new ArrayBuffer[FreebaseRelation]()
     object aERMutex
     val outputStream = new PrintWriter("outputRelations.txt")
+
+    val freebasePaths = ArrayBuffer[FreeBasePath]()
+    freebasePaths ++= personKeys.map( k => new FreeBasePath(Seq(k._1),k._2))
+    freebasePaths ++= twoDeepOrganizationKeys.map(k => new FreeBasePath(Seq(k._1,k._2),k._3))
+    freebasePaths ++= twoDeepPersonKeys.map(k => new FreeBasePath(Seq(k._1,k._2),k._3))
+
 
     val futures =
       for(mid <- io.Source.fromFile("mids").getLines()) yield {
@@ -119,43 +141,20 @@ object FreebaseQuery {
                   }
                 }
                 val response = blocking { QueryExecutor.executeQuery(mid + "-data",query,false) }
-                val name = (response \ "name").toString().replaceAll("\"","")
-                val mid2 = (response \ "mid").toString().replaceAll("\"","")
-                assert(mid2 == mid,"mid2 = " + mid2 + " mid1 = " + mid)
-
-                val thisEntity = FreebaseEntity(name,mid)
-                val extractedRelations = ArrayBuffer[FreebaseRelation]()
-
-
-                var strs =  new ArrayBuffer[String]()  +=  name + "\t"
-                for (key <- oneDeepKeys){
-                  val resp =  (response \ key._1 ).as[List[JsValue]]
-                  val ents = resp.flatMap(r => FreebaseEntity(r))
-                  extractedRelations ++= ents.map(e => FreebaseRelation(thisEntity,e,key._2))
-                  if(!resp.isEmpty) strs += "\t" + key + "\t" + ents.map(_.toString).mkString(",") + "\t"
-
-                }
-                for(key <- twoDeepKeys){
-                  val resp =  (response \ key._1 \\ key._2)
-                  if(!resp.isEmpty){
-                    val ents = resp.flatMap(r => FreebaseEntity(r))
-                    extractedRelations ++= ents.map(e => FreebaseRelation(thisEntity,e,key._3))
-                    strs += "\t" + key + "\t" + ents.map(_.toString).mkString(",") + "\t"
-
-                  }
-
-                }
+                val string =
                 aERMutex.synchronized{
+                  val name = (response \ "name").toString().replaceAll("\"","")
+                  val mid = (response \ "mid").toString().replaceAll("\"","")
 
-                  //allExtractedRelations ++= extractedRelations
+                  val thisEntity = FreebaseEntity(name,mid)
+                  val extractedRelations = freebasePaths.flatMap(_.fromJsValue(response,thisEntity))
 
-                  outputStream.println(extractedRelations.map(_.tabDeliminatedString).mkString("\n"))
+                  val st = extractedRelations.map(_.tabDeliminatedString).mkString("\n")
+                  outputStream.println(st)
                   outputStream.flush()
+                  st
                 }
-
-                val tr = extractedRelations.map(_.tabDeliminatedString).mkString("\n")
-                tr
-
+                string
               }else{
                 "no entity type found"
               }
