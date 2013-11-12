@@ -12,6 +12,11 @@ import collection.mutable.ArrayBuffer
 import java.io.{PrintWriter}
 import redis.clients.jedis.Jedis
 
+object ArbitraryLengthFreebaseQuery{
+  val baseQueryString = "[{ \"name\": null, \"id\": null, \"mid\": null, \"optional\": true }]"
+  def
+
+}
 
 object FreebaseQuery {
 
@@ -45,6 +50,9 @@ object FreebaseQuery {
     ("/people/person/education","/education/education/institution","education_institution"),
     ("/people/person/employment_history","/business/employment_tenure/company","employer")
   )
+
+  // TODO(aschein): Class for arbitrary length freebase path.
+
 
   def baseQuery(key: String): String = {
     "\"" + key + "\":" + baseQueryString
