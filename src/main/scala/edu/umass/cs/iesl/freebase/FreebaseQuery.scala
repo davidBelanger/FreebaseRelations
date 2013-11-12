@@ -17,7 +17,6 @@ object FreebaseQuery {
 
   val baseQueryString = "[{ \"name\": null, \"id\": null, \"mid\": null, \"optional\": true }]"
 
-
   val organizationKeys =   Seq()
 
   val twoDeepOrganizationKeys = Seq(
@@ -71,10 +70,23 @@ object FreebaseQuery {
   }
 
   var numRequestsOut = 0
+
+  class FreebaseQueryOptions extends cc.factorie.util.DefaultCmdOptions {
+    val writeToRedis = new CmdOption("--write-to-redis", "false", "BOOL", "Whether to write stuff to Redis")
+    val readFromRedis = new CmdOption("--read-from-redis", "false", "BOOL", "Whether to read stuff from Redis")
+    val redisSocket = new CmdOption("--redis-socket", "6379","INT","Redis Socket")
+    val redisHost = new CmdOption("--redis-host", "localhost","STRING","Redis Host")
+
+  }
+
   def main( args: Array[String]) {
 
+    val opts = new FreebaseQueryOptions
+    opts.parse(args)
+
     import scala.concurrent._
-    val useGet = false
+
+    val QueryExecutor = new QueryExecutor(opts.redisHost.value,opts.redisSocket.value.toInt,opts.readFromRedis.value.toBoolean,opts.writeToRedis.value.toBoolean)
 
     val allExtractedRelations = new ArrayBuffer[FreebaseRelation]()
     object aERMutex
@@ -85,7 +97,7 @@ object FreebaseQuery {
         future {
           try {
 
-            val typ = getEntityType(mid)
+            val typ = getEntityType(mid,QueryExecutor)
 
               if(typ.isDefined ){
                 val (query,oneDeepKeys,twoDeepKeys) = {
@@ -152,18 +164,19 @@ object FreebaseQuery {
 
       })
     val waitingList = Future.sequence(futures.toSeq)
-    waitingList.onComplete {
-      case Success(results) => println("Extacted:\n" + allExtractedRelations.mkString("\n") )
-    }
+//    waitingList.onComplete {
+//      case Success(results) => println("Extacted:\n" + allExtractedRelations.mkString("\n") )
+//      case _ => {}
+//    }
 
-    Await.result(waitingList,10000 seconds)
+    Await.result(waitingList,1000000 seconds)
   }
 
 
 
-  def getEntityType(mid: String): Option[String] = {
+  def getEntityType(mid: String, executor: QueryExecutor): Option[String] = {
     val typeQuery = getTypeQuery(mid)
-    val response = QueryExecutor.executeQuery(mid + "-type",typeQuery,true)
+    val response = executor.executeQuery(mid + "-type",typeQuery,true)
 
     val typ = (response \ "type").as[Seq[String]]
     for(entityType  <- entityTypes){
@@ -191,7 +204,7 @@ object FreebaseEntity{
 
 }
 
-object QueryExecutor{
+class QueryExecutor(jedisHost: String,jedisPort: Int,readFromJedis: Boolean, writeToJedis: Boolean){
 
   val timeBetweenQueries = 1 //.1 seconds
   object mutex
@@ -201,14 +214,14 @@ object QueryExecutor{
   //val base = "http://dime.labs.freebase.com/api/service/mqlread"
   val apiKey = io.Source.fromFile("GOOGLE_API.key").getLines().next()
   var mostRecentCall = System.currentTimeMillis
-  def getJedis(): Jedis = new Jedis("localhost",6379,600000)
+  def getJedis(): Jedis = new Jedis(jedisHost,jedisPort,600000)
 
 
   def executeQuery(mid: String,query:String,useGet: Boolean): JsValue = {
     val jedis = getJedis()
 
     val responseString =
-    if( jedis.exists(mid)){
+    if(readFromJedis && jedis.exists(mid)){
       jedis.get(mid)
     }else{
       val request = makeRequest(query,useGet)
@@ -223,7 +236,7 @@ object QueryExecutor{
         val httpResponse = request.execute()
 
         val responseStr = httpResponse.parseAsString()
-        jedis.set(mid,responseStr)
+        if(writeToJedis) jedis.set(mid,responseStr)
         responseStr
       }
     }
