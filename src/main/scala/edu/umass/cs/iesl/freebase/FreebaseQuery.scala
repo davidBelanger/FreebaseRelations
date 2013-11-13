@@ -16,7 +16,7 @@ import collection.parallel.mutable
 
 class FreeBasePath(path: Seq[String], name: String) {
   val baseQueryString = "[{ \"name\": null, \"id\": null, \"mid\": null, \"optional\": true }]"
-
+  val jsonStr = toJsonStr()
 
   def fromJsValue(response: JsValue, entity: FreebaseEntity) : Seq[FreebaseRelation] = {
     val extractedRelations = ArrayBuffer[FreebaseRelation]()
@@ -24,14 +24,14 @@ class FreeBasePath(path: Seq[String], name: String) {
     var jsv = response
     val len = path.length
     val resp =
-    if(path.length == 1){
-      jsv \\ path.last
-    }else{
-      for(key_index <- 0 until len - 1){
-        jsv = jsv \ path(key_index)
+      if(path.length == 1){
+        jsv \\ path.last
+      }else{
+        for(key_index <- 0 until len - 1){
+          jsv = jsv \ path(key_index)
+        }
+        jsv \\ path.last
       }
-      jsv \\ path.last
-    }
 
     if(!resp.isEmpty){
       val ents = resp.flatMap(r => FreebaseEntity(r))
@@ -60,12 +60,12 @@ object FreebaseQuery {
   val organizationKeys =   Seq()
 
   val twoDeepOrganizationKeys = Seq(
-  ("/organization/organization/headquarters","/location/mailing_address/citytown","headquarters_city") ,
+    ("/organization/organization/headquarters","/location/mailing_address/citytown","headquarters_city") ,
     ("/organization/organization/parent","/organization/organization_relationship/parent","parent_organization") ,
     ("b:/organization/organization/parent","/organization/organization_relationship/child","child_organization"),
-   // ("/organization/organization/founders","/organization/organization_founder") ,
+    // ("/organization/organization/founders","/organization/organization_founder") ,
     ("/organization/organization/board_members","/organization/organization_board_membership/member","board_member")  ,
-  ("/organization/organization/leadership","/organization/leadership/person","organization_leader")
+    ("/organization/organization/leadership","/organization/leadership/person","organization_leader")
 
   )
 
@@ -96,7 +96,7 @@ object FreebaseQuery {
 
 
   def makeQuery(mid: String, fps: Seq[FreeBasePath]): String = {
-    "[{ \"limit\":1, \"name\": null, \"type\": [], \"mid\": \"" + mid + "\"," + fps.map(_.toJsonStr()).mkString(",") + "}]"
+    "[{ \"limit\":1, \"name\": null, \"type\": [], \"mid\": \"" + mid + "\"," + fps.map(_.jsonStr).mkString(",") + "}]"
   }
 
   def makeQueryString(mid: String,oneDeepKeys: Seq[(String,String)],twoDeepKeys: Seq[(String,String,String)]): String = {
@@ -112,7 +112,7 @@ object FreebaseQuery {
     query
   }
 
-//  val entityTypes = Seq("/people/person","/location/location","/organization/organization")
+  //  val entityTypes = Seq("/people/person","/location/location","/organization/organization")
   val entityTypes = Seq("/people/person","/organization/organization")
 
   def getTypeQuery(mid: String): String = {
@@ -142,14 +142,11 @@ object FreebaseQuery {
 
     val freebasePaths = collection.mutable.HashMap[String,Seq[FreeBasePath]]()
     //todo: change back
-//    freebasePaths += "/people/person" ->  (personKeys.map(  twoDeepPersonKeys.map(k => new FreeBasePath(Seq(k._1,k._2),k._3)))).toSeq
+    //    freebasePaths += "/people/person" ->  (personKeys.map(  twoDeepPersonKeys.map(k => new FreeBasePath(Seq(k._1,k._2),k._3)))).toSeq
 
     freebasePaths += "/people/person" ->  (personKeys.map( k => new FreeBasePath(Seq(k._1),k._2)) ++ twoDeepPersonKeys.map(k => new FreeBasePath(Seq(k._1,k._2),k._3))).toSeq
     freebasePaths += "/organization/organization" -> (twoDeepOrganizationKeys.map(k => new FreeBasePath(Seq(k._1,k._2),k._3))).toSeq
 
-    freebasePaths.values.flatten.foreach( p => {
-      println(p.toJsonStr())
-    })
 
     val futures =
       for(mid <- io.Source.fromFile("mids").getLines().take(100)) yield {
@@ -158,12 +155,12 @@ object FreebaseQuery {
 
             val typ = getEntityType(mid,QueryExecutor)
 
-              if(typ.isDefined ){
-                val paths = freebasePaths(typ.get)
-                val query =  makeQuery(mid,paths)
+            if(typ.isDefined ){
+              val paths = freebasePaths(typ.get)
+              val query =  makeQuery(mid,paths)
 
-                val response = blocking { QueryExecutor.executeQuery(mid + "-data",query,false) }
-                val string =
+              val response = blocking { QueryExecutor.executeQuery(mid + "-data",query,false) }
+              val string =
                 aERMutex.synchronized{
                   val name = (response \ "name").toString().replaceAll("\"","")
                   val mid = (response \ "mid").toString().replaceAll("\"","")
@@ -176,10 +173,10 @@ object FreebaseQuery {
                   outputStream.flush()
                   st
                 }
-                string
-              }else{
-                "no entity type found"
-              }
+              string
+            }else{
+              "no entity type found"
+            }
           } catch {
             case ex: HttpResponseException => ex.getContent
             case   ex: Exception  =>  ex.getMessage +   ex.getStackTrace.mkString(",")
@@ -233,39 +230,54 @@ object FreebaseEntity{
 class QueryExecutor(jedisHost: String,jedisPort: Int,readFromJedis: Boolean, writeToJedis: Boolean){
 
   val timeBetweenQueries = 1 //.1 seconds
-  object mutex
+  object jedisMutex
+  object jedisReadMutex
+
   val httpTransport  = new NetHttpTransport();
   val requestFactory = httpTransport.createRequestFactory();
   val base = "https://www.googleapis.com/freebase/v1/mqlread"
   //val base = "http://dime.labs.freebase.com/api/service/mqlread"
   val apiKey = io.Source.fromFile("GOOGLE_API.key").getLines().next()
   var mostRecentCall = System.currentTimeMillis
-    def getJedis(): Jedis = new Jedis(jedisHost,jedisPort,600000)
+  val jedisConnection = (new Jedis(jedisHost,jedisPort,600000)).pipelined()
+  val jedisReadConnection = new Jedis(jedisHost,jedisPort,600000)
+  var writeCount = 0
 
 
-  def executeQuery(mid: String,query:String,useGet: Boolean): JsValue = {
-    val jedis = getJedis()
-    val responseString =
-    if(readFromJedis && jedis.exists(mid)){
-      jedis.get(mid)
-    }else{
-      val request = makeRequest(query,useGet)
-      mutex.synchronized{
 
-        val currentTime =  System.currentTimeMillis
-        val timeToWait = math.max(0,mostRecentCall - currentTime + timeBetweenQueries)
-        mostRecentCall = currentTime
 
-       // println("waiting " + timeToWait.toLong)
-        Thread.sleep(timeToWait.toLong)
-        val httpResponse = request.execute()
-
-        val responseStr = httpResponse.parseAsString()
-        if(writeToJedis) jedis.set(mid,responseStr)
-        responseStr
+  def getQueryResponseString(mid: String,query:String,useGet: Boolean): String = {
+    if(readFromJedis){
+      jedisReadMutex.synchronized{
+        if(jedisReadConnection.exists(mid))
+          return jedisReadConnection.get(mid)
       }
     }
 
+    val request = makeRequest(query,useGet)
+
+    val currentTime =  System.currentTimeMillis
+    val timeToWait = math.max(0,mostRecentCall - currentTime + timeBetweenQueries)
+    mostRecentCall = currentTime
+
+    Thread.sleep(timeToWait.toLong)
+    val httpResponse = request.execute()
+
+    val responseStr = httpResponse.parseAsString()
+    if(writeToJedis) {
+      jedisMutex.synchronized{
+        jedisConnection.set(mid,responseStr)
+        writeCount += 1
+        if(writeCount % 100 == 0) jedisConnection.sync()
+      }
+    }
+    responseStr
+
+
+  }
+
+  def executeQuery(mid: String,query:String,useGet: Boolean): JsValue = {
+    val responseString = getQueryResponseString(mid,query,useGet)
     val response = (Json.parse(responseString) \ "result").apply(0)  //note: this apply(0) makes sense, since we specified "limit":1 for the top-level query. this is fine, since we're querying by mid
     response
   }
