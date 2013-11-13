@@ -122,11 +122,10 @@ object FreebaseQuery {
   var numRequestsOut = 0
 
   class FreebaseQueryOptions extends cc.factorie.util.DefaultCmdOptions {
-    val writeToRedis = new CmdOption("--write-to-redis", "false", "BOOL", "Whether to write stuff to Redis")
-    val readFromRedis = new CmdOption("--read-from-redis", "false", "BOOL", "Whether to read stuff from Redis")
-    val redisSocket = new CmdOption("--redis-socket", "6379","INT","Redis Socket")
-    val redisHost = new CmdOption("--redis-host", "localhost","STRING","Redis Host")
-
+    val writeToRedis = new CmdOption("write-to-redis", "false", "BOOL", "Whether to write stuff to Redis")
+    val readFromRedis = new CmdOption("read-from-redis", "false", "BOOL", "Whether to read stuff from Redis")
+    val redisSocket = new CmdOption("redis-socket", "6379","INT","Redis Socket")
+    val redisHost = new CmdOption("redis-host", "localhost","STRING","Redis Host")
   }
 
   def main( args: Array[String]) {
