@@ -231,7 +231,7 @@ object FreebaseEntity{
 
 class QueryExecutor(jedisHost: String,jedisPort: Int,readFromJedis: Boolean, writeToJedis: Boolean){
 
-  val timeBetweenQueries = 10 //.1 seconds
+  val timeBetweenQueries = 100 //.1 seconds
   object jedisMutex
   object jedisReadMutex
 
@@ -246,7 +246,7 @@ class QueryExecutor(jedisHost: String,jedisPort: Int,readFromJedis: Boolean, wri
   var writeCount = 0
 
 
-
+  object timingMutex
 
   def getQueryResponseString(mid: String,query:String,useGet: Boolean): String = {
     if(readFromJedis){
@@ -257,12 +257,16 @@ class QueryExecutor(jedisHost: String,jedisPort: Int,readFromJedis: Boolean, wri
     }
 
     val request = makeRequest(query,useGet)
+    val timeToWait =
+    timingMutex.synchronized{
+      val currentTime =  System.currentTimeMillis
+      val ttw = math.max(0,mostRecentCall - currentTime + timeBetweenQueries)
+      mostRecentCall = currentTime
+      ttw
+    }
 
-    val currentTime =  System.currentTimeMillis
-    val timeToWait = math.max(0,mostRecentCall - currentTime + timeBetweenQueries)
-    mostRecentCall = currentTime
     if(timeToWait > 0) println("waiting " + timeToWait)
-    Thread.sleep(timeToWait.toLong)
+    Thread.sleep(timeToWait)
     val httpResponse = request.execute()
 
     val responseStr = httpResponse.parseAsString()
