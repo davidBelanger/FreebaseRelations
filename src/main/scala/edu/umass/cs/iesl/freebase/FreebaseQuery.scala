@@ -159,7 +159,9 @@ object FreebaseQuery {
               val paths = freebasePaths(typ.get)
               val query =  makeQuery(mid,paths)
 
-              val response = blocking { QueryExecutor.executeQuery(mid + "-data",query,false) }
+              //val response = blocking { QueryExecutor.executeQuery(mid + "-data",query,false) }
+              val response =  QueryExecutor.executeQuery(mid + "-data",query,false)
+
               val string =
                 aERMutex.synchronized{
                   val name = (response \ "name").toString().replaceAll("\"","")
