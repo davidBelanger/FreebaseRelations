@@ -149,7 +149,7 @@ object FreebaseQuery {
 
 
     val futures =
-      for(mid <- io.Source.fromFile("mids").getLines().take(100)) yield {
+      for(mid <- io.Source.fromFile("mids").getLines()) yield {
         future {
           try {
 
