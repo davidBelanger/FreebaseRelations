@@ -56,17 +56,23 @@ class FreeBasePath(path: Seq[String], name: String) {
 
 object FreebaseQuery {
 
+  //These are the only entity types we extract info for. If an entity doesn't have this type, we don't follow up with it.
+  val entityTypes = Seq("/people/person","/organization/organization")
 
+
+
+  //////////////////////////////////////////////////////
+  // Here, we have hardcoded in various relations we seek to extract. In the tuples, the rightmost field is just the name we use for the relation.
+  // The distinction between 'keys' and 'twoDeepKeys' are that the former are for single-hop paths in freebase and the others are for two hops.
+  // We support arbitrarily long paths. Just instantiate a FreebasePath above (the paths below get converted into Freebase Paths later)
   val organizationKeys =   Seq()
 
   val twoDeepOrganizationKeys = Seq(
     ("/organization/organization/headquarters","/location/mailing_address/citytown","headquarters_city") ,
     ("/organization/organization/parent","/organization/organization_relationship/parent","parent_organization") ,
     ("b:/organization/organization/parent","/organization/organization_relationship/child","child_organization"),
-    // ("/organization/organization/founders","/organization/organization_founder") ,
     ("/organization/organization/board_members","/organization/organization_board_membership/member","board_member")  ,
     ("/organization/organization/leadership","/organization/leadership/person","organization_leader")
-
   )
 
 
@@ -85,8 +91,7 @@ object FreebaseQuery {
     ("/people/person/education","/education/education/institution","education_institution"),
     ("/people/person/employment_history","/business/employment_tenure/company","employer")
   )
-
-
+  //////////////////////////////////////////////////////
 
   val baseQueryString = "[{ \"name\": null, \"id\": null, \"mid\": null, \"optional\": true }]"
 
@@ -112,8 +117,6 @@ object FreebaseQuery {
     query
   }
 
-  //  val entityTypes = Seq("/people/person","/location/location","/organization/organization")
-  val entityTypes = Seq("/people/person","/organization/organization")
 
   def getTypeQuery(mid: String): String = {
     "[{ \"limit\":1, \"name\": null, \"type\": [], \"mid\": \"" + mid +"\"}]"
@@ -126,6 +129,8 @@ object FreebaseQuery {
     val readFromRedis = new CmdOption("read-from-redis", "false", "BOOL", "Whether to read stuff from Redis")
     val redisSocket = new CmdOption("redis-socket", "6379","INT","Redis Socket")
     val redisHost = new CmdOption("redis-host", "localhost","STRING","Redis Host")
+    val outputFile = new CmdOption("output-file","outputRelations.txt", "FILE","where to write out the relations as a flat file")
+    val midFile =  new CmdOption("mid-file","mids", "FILE","where to read Freebase mids from")
   }
 
   def main( args: Array[String]) {
@@ -138,18 +143,15 @@ object FreebaseQuery {
     val QueryExecutor = new QueryExecutor(opts.redisHost.value,opts.redisSocket.value.toInt,opts.readFromRedis.value.toBoolean,opts.writeToRedis.value.toBoolean)
 
     object aERMutex
-    val outputStream = new PrintWriter("outputRelations.txt")
+    val outputStream = new PrintWriter(opts.outputFile.value)
 
     val freebasePaths = collection.mutable.HashMap[String,Seq[FreeBasePath]]()
-    //todo: change back
-    //    freebasePaths += "/people/person" ->  (personKeys.map(  twoDeepPersonKeys.map(k => new FreeBasePath(Seq(k._1,k._2),k._3)))).toSeq
-
     freebasePaths += "/people/person" ->  (personKeys.map( k => new FreeBasePath(Seq(k._1),k._2)) ++ twoDeepPersonKeys.map(k => new FreeBasePath(Seq(k._1,k._2),k._3))).toSeq
     freebasePaths += "/organization/organization" -> (twoDeepOrganizationKeys.map(k => new FreeBasePath(Seq(k._1,k._2),k._3))).toSeq
 
 
     val futures =
-      for(mid <- io.Source.fromFile("mids").getLines().take(100)) yield {
+      for(mid <- io.Source.fromFile(opts.midFile.value).getLines()) yield {
         future {
           try {
 
@@ -319,25 +321,5 @@ case class FreebaseRelation(e1: FreebaseEntity, e2: FreebaseEntity,rel: String) 
 case class FreebaseEntity(name: String, mid: String)   {
   override def toString = name + "-" + mid
 }
-
-
-//object RelationAlignment{
-//  def main( args: Array[String]) {
-//    val relations = collection.mutable.HashMap[String,HashMap[String,FreebaseRelation]]()
-//    val entitiesSeenInText = ArrayBuffer[String]()
-//    for(line <- io.Source.fromFile("outputRelations.txt").getLines()){
-//      val fields = line.split("\t")
-//        val e1Id = fields(0)
-//        val e2Id = fields(2)
-//        val e1 =  FreebaseEntity(fields(1),fields(0),fields(3),fields(2),fields(4))
-//        val relation = FreebaseRelation(e1,e2)
-//        relations.getOrElseUpdate(e1Id,HashMap[String,FreebaseRelation]) += e2Id -> relation
-//        relations.getOrElseUpdate(e2Id,HashMap[String,FreebaseRelation]) += e1Id -> relation
-//        entitiesSeenInText += e1Id
-//    }
-//    println("things that were both in the corpus")
-//  }
-//
-//}
 
 
