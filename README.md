@@ -20,7 +20,8 @@ Setup
 
     2) (optional) Install Redis and start up redis-server.
 
-    3) Make a file with one Freebase mid per line.
+    3) Make a file with one Freebase mid per line. (an example is checked in as 'mids' in
+       the root directory of the repo)
 
     4) Perhaps modify src//main/scala/edu/umass/cs/iesl/freebase/FreebaseQuery.scala
        to have additional relations to extract from Freebase. Instructions at the
