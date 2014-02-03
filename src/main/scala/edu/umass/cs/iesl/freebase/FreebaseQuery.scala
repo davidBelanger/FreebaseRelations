@@ -11,7 +11,7 @@ import play.api.libs.json._
 import collection.mutable.ArrayBuffer
 import java.io.{PrintWriter}
 import redis.clients.jedis.Jedis
-import collection.immutable.HashMap
+import collection.immutable. HashMap
 import collection.parallel.mutable
 
 class FreeBasePath(path: Seq[String], name: String) {
@@ -160,7 +160,9 @@ object FreebaseQuery {
     val QueryExecutor = new QueryExecutor(opts.redisHost.value,opts.redisSocket.value.toInt,opts.readFromRedis.value.toBoolean,opts.writeToRedis.value.toBoolean)
 
     object aERMutex
-    val outputStream = new PrintWriter(opts.outputFile.value)
+    val outputStream_relation = new PrintWriter(opts.outputFile.value + ".relations")
+    val outputStream_type = new PrintWriter(opts.outputFile.value + ".types")
+
 
     val freebasePaths = collection.mutable.HashMap[String,Seq[FreeBasePath]]()
     freebasePaths += "/people/person" ->  personPaths
@@ -168,13 +170,19 @@ object FreebaseQuery {
 
 
     val futures =
-      for(mid <- io.Source.fromFile(opts.midFile.value).getLines()) yield {
+      for(mid <- io.Source.fromFile(opts.midFile.value).getLines().take(25)) yield {
         future {
           try {
-            val typ = getEntityType(mid,QueryExecutor)
+            val (typ,allTypes) = getEntityType(mid,QueryExecutor)
+            outputStream_type.println(mid + " " + allTypes.mkString(" "))
+            outputStream_type.flush()
+            println("wrote for " + mid)
             if(typ.isDefined ){
+              //todo: serialize out all types that the entity has
               val paths = freebasePaths(typ.get)
               val query =  makeQuery(mid,paths)
+
+
 
               val response =  blocking {QueryExecutor.executeQuery(mid + "-data",query,false)}
 
@@ -187,8 +195,8 @@ object FreebaseQuery {
                   val extractedRelations = paths.flatMap(_.fromJsValue(response,thisEntity))
 
                   val st = extractedRelations.map(_.tabDeliminatedString).mkString("\n")
-                  outputStream.println(st)
-                  outputStream.flush()
+                  outputStream_relation.println(st)
+                  outputStream_type.flush()
                   st
                 }
               string
@@ -219,22 +227,27 @@ object FreebaseQuery {
 
 
     Await.result(waitingList,1000000 seconds)
+    outputStream_relation.close()
+    outputStream_type.close()
+    assert(!futures.exists(!_.isCompleted))
+
   }
 
 
 
-  def getEntityType(mid: String, executor: QueryExecutor): Option[String] = {
+  def getEntityType(mid: String, executor: QueryExecutor): (Option[String],Seq[String]) = {
     val typeQuery = getTypeQuery(mid)
     println("executing query")
     val response = executor.executeQuery(mid + "-type",typeQuery,true)
 
-    val typ = (response \ "type").as[Seq[String]]
+    val allTypes = (response \ "type").as[Seq[String]]
+
     for(entityType  <- entityTypes){
-      if (typ.contains(entityType)){
-        return Some(entityType)
+      if (allTypes.contains(entityType)){
+        return (Some(entityType),allTypes)
       }
     }
-    return None
+    return (None ,allTypes)
   }
 }
 
