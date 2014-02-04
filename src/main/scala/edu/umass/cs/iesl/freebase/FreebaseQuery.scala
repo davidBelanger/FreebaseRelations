@@ -170,7 +170,7 @@ object FreebaseQuery {
 
 
     val futures =
-      for(mid <- io.Source.fromFile(opts.midFile.value).getLines().take(25)) yield {
+      for(mid <- io.Source.fromFile(opts.midFile.value).getLines()) yield {
         future {
           try {
             val (typ,allTypes) = getEntityType(mid,QueryExecutor)
@@ -240,7 +240,7 @@ object FreebaseQuery {
     println("executing query")
     val response = executor.executeQuery(mid + "-type",typeQuery,true)
 
-    val allTypes = (response \ "type").as[Seq[String]]
+    val allTypes = (response \ "type").as[Seq[String]].filter(!_.startsWith("/user/"))
 
     for(entityType  <- entityTypes){
       if (allTypes.contains(entityType)){
