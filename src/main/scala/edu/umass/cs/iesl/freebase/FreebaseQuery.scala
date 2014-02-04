@@ -11,7 +11,7 @@ import play.api.libs.json._
 import collection.mutable.ArrayBuffer
 import java.io.{PrintWriter}
 import redis.clients.jedis.Jedis
-import collection.immutable.HashMap
+import collection.immutable. HashMap
 import collection.parallel.mutable
 
 class FreeBasePath(path: Seq[String], name: String) {
@@ -24,8 +24,10 @@ class FreeBasePath(path: Seq[String], name: String) {
     var jsv = response
     val len = path.length
     val resp =
+      //todo: does this properly handle situations when the relation is multi-valued, such as when there are multiple founders of an organization?
       if(path.length == 1){
         jsv \\ path.last
+
       }else{
         for(key_index <- 0 until len - 1){
           jsv = jsv \ path(key_index)
@@ -56,37 +58,57 @@ class FreeBasePath(path: Seq[String], name: String) {
 
 object FreebaseQuery {
 
-
-  val organizationKeys =   Seq()
-
-  val twoDeepOrganizationKeys = Seq(
-    ("/organization/organization/headquarters","/location/mailing_address/citytown","headquarters_city") ,
-    ("/organization/organization/parent","/organization/organization_relationship/parent","parent_organization") ,
-    ("b:/organization/organization/parent","/organization/organization_relationship/child","child_organization"),
-    // ("/organization/organization/founders","/organization/organization_founder") ,
-    ("/organization/organization/board_members","/organization/organization_board_membership/member","board_member")  ,
-    ("/organization/organization/leadership","/organization/leadership/person","organization_leader")
-
-  )
+  //These are the only entity types we extract info for. If an entity doesn't have this type, we don't follow up with it.
+  val entityTypes = Seq("/people/person","/organization/organization")
 
 
-  val personKeys = Seq(
+
+  //////////////////////////////////////////////////////
+  // Here, we have hardcoded in various relations we seek to extract. In the tuples, the rightmost field is just the name we use for the relation.
+
+
+//  val businessPaths = Seq(
+//      "/business/business_location/parent_company
+//      "/business/company/advisors"
+//      "/business/company/founders
+//      "/business/company/locations
+//      "/business/company/major_shareholders
+//      "/business/company/place_founded
+//      "/business/company_advisor/companies_advised
+//      "/business/person/company
+//      "/business/shopping_center/owner
+//      "/business/shopping_center_owner/shopping_centers_owned
+//  )
+
+
+  val organizationPaths =   Seq(
+      ("/organization/organization/founders","organization_founder")
+    ).map(x => new FreeBasePath(Seq(x._1),x._2)) ++
+    Seq(
+      ("/organization/organization/headquarters","/location/mailing_address/citytown","headquarters_city") ,
+      ("/organization/organization/parent","/organization/organization_relationship/parent","parent_organization") ,
+      ("b:/organization/organization/parent","/organization/organization_relationship/child","child_organization"),
+      ("/organization/organization/board_members","/organization/organization_board_membership/member","board_member")  ,
+      ("/organization/organization/leadership","/organization/leadership/person","organization_leader")
+    ).map(x => {new FreeBasePath(Seq(x._1,x._2),x._3)})
+
+
+  val personPaths = Seq(
     ("/people/person/nationality" , "nationality"),
     ("/people/person/place_of_birth", "place_of_birth"),
     ("/people/person/religion", "religion"),
     ("/people/deceased_person/place_of_death", "place_of_death" ),
     ("/people/deceased_person/cause_of_death", "cause_of_death"),
     ("/people/person/children", "children" ),
-    ("/people/person/parents","parents"))
-  val twoDeepPersonKeys = Seq(
+    ("/people/person/parents","parents")).map(x => new FreeBasePath(Seq(x._1),x._2)) ++
+    Seq(
     ("/people/person/places_lived","/people/place_lived/location","place_lived") ,
     ("/people/person/sibling_s","/people/sibling_relationship/sibling","sibling"),
     ("/people/person/spouse_s","/people/marriage/spouse","spouse"),
     ("/people/person/education","/education/education/institution","education_institution"),
     ("/people/person/employment_history","/business/employment_tenure/company","employer")
-  )
-
-
+    ).map(x => new FreeBasePath(Seq(x._1,x._2),x._3))
+  //////////////////////////////////////////////////////
 
   val baseQueryString = "[{ \"name\": null, \"id\": null, \"mid\": null, \"optional\": true }]"
 
@@ -112,8 +134,6 @@ object FreebaseQuery {
     query
   }
 
-  //  val entityTypes = Seq("/people/person","/location/location","/organization/organization")
-  val entityTypes = Seq("/people/person","/organization/organization")
 
   def getTypeQuery(mid: String): String = {
     "[{ \"limit\":1, \"name\": null, \"type\": [], \"mid\": \"" + mid +"\"}]"
@@ -126,6 +146,8 @@ object FreebaseQuery {
     val readFromRedis = new CmdOption("read-from-redis", "false", "BOOL", "Whether to read stuff from Redis")
     val redisSocket = new CmdOption("redis-socket", "6379","INT","Redis Socket")
     val redisHost = new CmdOption("redis-host", "localhost","STRING","Redis Host")
+    val outputFile = new CmdOption("output-file","outputRelations.txt", "FILE","where to write out the relations as a flat file")
+    val midFile =  new CmdOption("mid-file","mids", "FILE","where to read Freebase mids from")
   }
 
   def main( args: Array[String]) {
@@ -138,29 +160,31 @@ object FreebaseQuery {
     val QueryExecutor = new QueryExecutor(opts.redisHost.value,opts.redisSocket.value.toInt,opts.readFromRedis.value.toBoolean,opts.writeToRedis.value.toBoolean)
 
     object aERMutex
-    val outputStream = new PrintWriter("outputRelations.txt")
+    val outputStream_relation = new PrintWriter(opts.outputFile.value + ".relations")
+    val outputStream_type = new PrintWriter(opts.outputFile.value + ".types")
+
 
     val freebasePaths = collection.mutable.HashMap[String,Seq[FreeBasePath]]()
-    //todo: change back
-    //    freebasePaths += "/people/person" ->  (personKeys.map(  twoDeepPersonKeys.map(k => new FreeBasePath(Seq(k._1,k._2),k._3)))).toSeq
-
-    freebasePaths += "/people/person" ->  (personKeys.map( k => new FreeBasePath(Seq(k._1),k._2)) ++ twoDeepPersonKeys.map(k => new FreeBasePath(Seq(k._1,k._2),k._3))).toSeq
-    freebasePaths += "/organization/organization" -> (twoDeepOrganizationKeys.map(k => new FreeBasePath(Seq(k._1,k._2),k._3))).toSeq
+    freebasePaths += "/people/person" ->  personPaths
+    freebasePaths += "/organization/organization" -> organizationPaths
 
 
     val futures =
       for(mid <- io.Source.fromFile("mids").getLines()) yield {
         future {
           try {
-
-            val typ = getEntityType(mid,QueryExecutor)
-
+            val (typ,allTypes) = getEntityType(mid,QueryExecutor)
+            outputStream_type.println(mid + " " + allTypes.mkString(" "))
+            outputStream_type.flush()
+            println("wrote for " + mid)
             if(typ.isDefined ){
+              //todo: serialize out all types that the entity has
               val paths = freebasePaths(typ.get)
               val query =  makeQuery(mid,paths)
 
-              //val response = blocking { QueryExecutor.executeQuery(mid + "-data",query,false) }
-              val response =  QueryExecutor.executeQuery(mid + "-data",query,false)
+
+
+              val response =  blocking {QueryExecutor.executeQuery(mid + "-data",query,false)}
 
               val string =
                 aERMutex.synchronized{
@@ -171,8 +195,8 @@ object FreebaseQuery {
                   val extractedRelations = paths.flatMap(_.fromJsValue(response,thisEntity))
 
                   val st = extractedRelations.map(_.tabDeliminatedString).mkString("\n")
-                  outputStream.println(st)
-                  outputStream.flush()
+                  outputStream_relation.println(st)
+                  outputStream_type.flush()
                   st
                 }
               string
@@ -188,30 +212,42 @@ object FreebaseQuery {
       }
 
 
-    val fs = futures.foreach(f =>
+    futures.foreach(f =>
       f onComplete {
-        case Success(result) => {if(result != "no entity type found")  println(result ) }
-        case Failure(e)      => println(e.getStackTrace.mkString(","))
+        case Success(result) => {
+         if(result != "no entity type found")
+            println(result )
+        }
+        case Failure(e)      => {
+          println(e.getStackTrace.mkString(","))
+        }
 
       })
     val waitingList = Future.sequence(futures.toSeq)
 
+
     Await.result(waitingList,1000000 seconds)
+    outputStream_relation.close()
+    outputStream_type.close()
+    assert(!futures.exists(!_.isCompleted))
+
   }
 
 
 
-  def getEntityType(mid: String, executor: QueryExecutor): Option[String] = {
+  def getEntityType(mid: String, executor: QueryExecutor): (Option[String],Seq[String]) = {
     val typeQuery = getTypeQuery(mid)
+    println("executing query")
     val response = executor.executeQuery(mid + "-type",typeQuery,true)
 
-    val typ = (response \ "type").as[Seq[String]]
+    val allTypes = (response \ "type").as[Seq[String]]
+
     for(entityType  <- entityTypes){
-      if (typ.contains(entityType)){
-        return Some(entityType)
+      if (allTypes.contains(entityType)){
+        return (Some(entityType),allTypes)
       }
     }
-    return None
+    return (None ,allTypes)
   }
 }
 
@@ -231,7 +267,7 @@ object FreebaseEntity{
 
 class QueryExecutor(jedisHost: String,jedisPort: Int,readFromJedis: Boolean, writeToJedis: Boolean){
 
-  val timeBetweenQueries = 10 //.1 seconds
+  val timeBetweenQueries = 100 //.1 seconds
   object jedisMutex
   object jedisReadMutex
 
@@ -246,7 +282,7 @@ class QueryExecutor(jedisHost: String,jedisPort: Int,readFromJedis: Boolean, wri
   var writeCount = 0
 
 
-
+  object timingMutex
 
   def getQueryResponseString(mid: String,query:String,useGet: Boolean): String = {
     if(readFromJedis){
@@ -257,12 +293,16 @@ class QueryExecutor(jedisHost: String,jedisPort: Int,readFromJedis: Boolean, wri
     }
 
     val request = makeRequest(query,useGet)
+    val timeToWait =
+    timingMutex.synchronized{
+      val currentTime =  System.currentTimeMillis
+      val ttw = math.max(0,mostRecentCall - currentTime + timeBetweenQueries)
+      mostRecentCall = currentTime
+      ttw
+    }
 
-    val currentTime =  System.currentTimeMillis
-    val timeToWait = math.max(0,mostRecentCall - currentTime + timeBetweenQueries)
-    mostRecentCall = currentTime
     if(timeToWait > 0) println("waiting " + timeToWait)
-    Thread.sleep(timeToWait.toLong)
+    Thread.sleep(timeToWait)
     val httpResponse = request.execute()
 
     val responseStr = httpResponse.parseAsString()
@@ -273,6 +313,7 @@ class QueryExecutor(jedisHost: String,jedisPort: Int,readFromJedis: Boolean, wri
         if(writeCount % 100 == 0) jedisConnection.sync()
       }
     }
+
     responseStr
 
 
@@ -315,25 +356,5 @@ case class FreebaseRelation(e1: FreebaseEntity, e2: FreebaseEntity,rel: String) 
 case class FreebaseEntity(name: String, mid: String)   {
   override def toString = name + "-" + mid
 }
-
-
-//object RelationAlignment{
-//  def main( args: Array[String]) {
-//    val relations = collection.mutable.HashMap[String,HashMap[String,FreebaseRelation]]()
-//    val entitiesSeenInText = ArrayBuffer[String]()
-//    for(line <- io.Source.fromFile("outputRelations.txt").getLines()){
-//      val fields = line.split("\t")
-//        val e1Id = fields(0)
-//        val e2Id = fields(2)
-//        val e1 =  FreebaseEntity(fields(1),fields(0),fields(3),fields(2),fields(4))
-//        val relation = FreebaseRelation(e1,e2)
-//        relations.getOrElseUpdate(e1Id,HashMap[String,FreebaseRelation]) += e2Id -> relation
-//        relations.getOrElseUpdate(e2Id,HashMap[String,FreebaseRelation]) += e1Id -> relation
-//        entitiesSeenInText += e1Id
-//    }
-//    println("things that were both in the corpus")
-//  }
-//
-//}
 
 
