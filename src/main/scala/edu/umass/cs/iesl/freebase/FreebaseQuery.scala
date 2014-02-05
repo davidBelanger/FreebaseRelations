@@ -173,8 +173,8 @@ object FreebaseQuery {
       for(mid <- io.Source.fromFile(opts.midFile.value).getLines()) yield {
         future {
           try {
-            val (typ,allTypes) = getEntityType(mid,QueryExecutor)
-            outputStream_type.println(mid + " " + allTypes.mkString(" "))
+            val (typ,name,allTypes) = getEntityType(mid,QueryExecutor)
+            outputStream_type.println(mid + " " + name + " " + allTypes.mkString(" "))
             outputStream_type.flush()
             if(verbose) println("wrote for " + mid)
             if(typ.isDefined ){
@@ -235,19 +235,19 @@ object FreebaseQuery {
 
 
 
-  def getEntityType(mid: String, executor: QueryExecutor): (Option[String],Seq[String]) = {
+  def getEntityType(mid: String, executor: QueryExecutor): (Option[String],String,Seq[String]) = {
     val typeQuery = getTypeQuery(mid)
     if(verbose) ("executing query")
     val response = executor.executeQuery(mid + "-type",typeQuery,true)
 
     val allTypes = (response \ "type").as[Seq[String]].filter(!_.startsWith("/user/"))
-
+    val name =  (response \ "name").as[String].replaceAll(" ","_")
     for(entityType  <- entityTypes){
       if (allTypes.contains(entityType)){
-        return (Some(entityType),allTypes)
+        return (Some(entityType),name,allTypes)
       }
     }
-    return (None ,allTypes)
+    return (None ,name,allTypes)
   }
 }
 
