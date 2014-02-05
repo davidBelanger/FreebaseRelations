@@ -57,7 +57,7 @@ class FreeBasePath(path: Seq[String], name: String) {
 }
 
 object FreebaseQuery {
-
+  var verbose = false
   //These are the only entity types we extract info for. If an entity doesn't have this type, we don't follow up with it.
   val entityTypes = Seq("/people/person","/organization/organization")
 
@@ -176,7 +176,7 @@ object FreebaseQuery {
             val (typ,allTypes) = getEntityType(mid,QueryExecutor)
             outputStream_type.println(mid + " " + allTypes.mkString(" "))
             outputStream_type.flush()
-            println("wrote for " + mid)
+            if(verbose) println("wrote for " + mid)
             if(typ.isDefined ){
               //todo: serialize out all types that the entity has
               val paths = freebasePaths(typ.get)
@@ -216,7 +216,7 @@ object FreebaseQuery {
       f onComplete {
         case Success(result) => {
          if(result != "no entity type found")
-            println(result )
+           if(verbose) (result )
         }
         case Failure(e)      => {
           println(e.getStackTrace.mkString(","))
@@ -237,7 +237,7 @@ object FreebaseQuery {
 
   def getEntityType(mid: String, executor: QueryExecutor): (Option[String],Seq[String]) = {
     val typeQuery = getTypeQuery(mid)
-    println("executing query")
+    if(verbose) ("executing query")
     val response = executor.executeQuery(mid + "-type",typeQuery,true)
 
     val allTypes = (response \ "type").as[Seq[String]].filter(!_.startsWith("/user/"))
@@ -301,7 +301,7 @@ class QueryExecutor(jedisHost: String,jedisPort: Int,readFromJedis: Boolean, wri
       ttw
     }
 
-    if(timeToWait > 0) println("waiting " + timeToWait)
+    if(timeToWait > 0 && FreebaseQuery.verbose) println("waiting " + timeToWait)
     Thread.sleep(timeToWait)
     val httpResponse = request.execute()
 
