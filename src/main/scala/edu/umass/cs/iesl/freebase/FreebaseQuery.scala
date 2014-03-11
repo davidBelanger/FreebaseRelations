@@ -148,6 +148,7 @@ object FreebaseQuery {
     val redisHost = new CmdOption("redis-host", "localhost","STRING","Redis Host")
     val outputFile = new CmdOption("output-file","outputRelations.txt", "FILE","where to write out the relations as a flat file")
     val midFile =  new CmdOption("mid-file","mids", "FILE","where to read Freebase mids from")
+    val onlyTypes = new CmdOption("types-only","false","BOOL","whether to only extract info about types, and not relations")
   }
 
   def main( args: Array[String]) {
@@ -167,7 +168,7 @@ object FreebaseQuery {
     val freebasePaths = collection.mutable.HashMap[String,Seq[FreeBasePath]]()
     freebasePaths += "/people/person" ->  personPaths
     freebasePaths += "/organization/organization" -> organizationPaths
-
+    val onlyTypes = opts.onlyTypes.value.toBoolean
 
     val futures =
       for(mid <- io.Source.fromFile(opts.midFile.value).getLines()) yield {
@@ -177,12 +178,10 @@ object FreebaseQuery {
             outputStream_type.println(mid + " " + name + " " + allTypes.mkString(" "))
             outputStream_type.flush()
             if(verbose) println("wrote for " + mid)
-            if(typ.isDefined ){
+            if(typ.isDefined && !onlyTypes){
               //todo: serialize out all types that the entity has
               val paths = freebasePaths(typ.get)
               val query =  makeQuery(mid,paths)
-
-
 
               val response =  blocking {QueryExecutor.executeQuery(mid + "-data",query,false)}
 
